@@ -137,18 +137,18 @@ impl ServiceState {
             outcome_producer.clone(),
             redis_pool.clone(),
         )
-        .context(ServerErrorKind::ConfigError)?
-        .start();
+        .context(ServerErrorKind::ConfigError)?;
+        let event_manager = Arbiter::start(move |_| event_manager);
 
-        let project_cache =
-            ProjectCache::new(config.clone(), upstream_relay.clone(), redis_pool).start();
+        let project_cache = ProjectCache::new(config.clone(), upstream_relay.clone(), redis_pool);
+        let project_cache_addr = Arbiter::start(move |_| project_cache);
 
         Ok(ServiceState {
             config: config.clone(),
             key_lookup: ProjectKeyLookup::new(config.clone(), upstream_relay.clone()).start(),
             upstream_relay: upstream_relay.clone(),
             relay_cache: RelayCache::new(config.clone(), upstream_relay.clone()).start(),
-            project_cache,
+            project_cache: project_cache_addr,
             healthcheck: Healthcheck::new(config, upstream_relay).start(),
             event_manager,
             outcome_producer,
@@ -301,9 +301,8 @@ pub fn start(config: Config) -> Result<Recipient<server::StopServer>, ServerErro
 
     // Start the connector before creating the ServiceState. The service state will spawn Arbiters
     // that immediately start the authentication process. The connector must be available before.
-    let connector = ClientConnector::default()
-        .limit(config.max_concurrent_requests())
-        .start();
+    let max_requests = config.max_concurrent_requests();
+    let connector = Arbiter::start(move |_| ClientConnector::default().limit(max_requests));
 
     System::current().registry().set(connector);
 
