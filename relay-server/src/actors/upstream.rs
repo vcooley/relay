@@ -196,6 +196,7 @@ impl UpstreamRelay {
             .wait_timeout(self.config.event_buffer_expiry())
             // This is the timeout after wait + connect.
             .timeout(self.config.http_timeout())
+            .conn_timeout(self.config.event_buffer_expiry())
             .map_err(UpstreamRequestError::SendFailed)
             .and_then(|response| match response.status() {
                 StatusCode::TOO_MANY_REQUESTS => {
