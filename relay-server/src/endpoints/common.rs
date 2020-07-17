@@ -2,6 +2,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Instant;
 
 use actix::prelude::*;
 use actix_web::http::{header, StatusCode};
@@ -13,7 +14,9 @@ use sentry::Hub;
 use sentry_actix::ActixWebHubExt;
 use serde::Deserialize;
 
+use relay_common::metrics::{log_timer, TimerMetric};
 use relay_common::{clone, metric, tryf, LogError};
+use relay_config::Config;
 use relay_general::protocol::{EventId, EventType};
 use relay_quotas::RateLimits;
 
@@ -27,7 +30,6 @@ use crate::extractors::RequestMeta;
 use crate::metrics::RelayCounters;
 use crate::service::{ServiceApp, ServiceState};
 use crate::utils::{self, ApiErrorResponse, FormDataIter, MultipartError};
-use relay_config::Config;
 
 #[derive(Fail, Debug)]
 pub enum BadStoreRequest {
@@ -354,6 +356,28 @@ fn check_envelope_size_limits(config: &Config, envelope: &Envelope) -> bool {
         && session_count <= config.max_session_count()
 }
 
+enum StoreTimers {
+    GetProject,
+    ExtractEnvelope,
+    CheckEnvelope,
+    CheckLimits,
+    QueueEnvelope,
+    HandleStoreRequest,
+}
+
+impl TimerMetric for StoreTimers {
+    fn name(&self) -> &'static str {
+        match self {
+            StoreTimers::GetProject => "store_timing.get_project",
+            StoreTimers::ExtractEnvelope => "store_timing.extract_envelope",
+            StoreTimers::CheckEnvelope => "store_timing.check_envelope",
+            StoreTimers::CheckLimits => "store_timing.check_limits",
+            StoreTimers::QueueEnvelope => "store_timing.queue_envelope",
+            StoreTimers::HandleStoreRequest => "store_timing.handle_store_request",
+        }
+    }
+}
+
 /// Handles Sentry events.
 ///
 /// Sentry events may come either directly from a http request ( the store endpoint calls this
@@ -376,7 +400,7 @@ where
     R: FnOnce(Option<EventId>) -> HttpResponse + Copy + 'static,
 {
     let start_time = meta.start_time();
-
+    let beginning = Instant::now();
     // For now, we only handle <= v8 and drop everything else
     let version = meta.version();
     if version > relay_common::PROTOCOL_VERSION {
@@ -409,10 +433,20 @@ where
 
     let future = project_manager
         .send(GetProject { id: project_id })
+        .then(clone!(beginning, |r| log_timer(
+            StoreTimers::GetProject,
+            beginning,
+            r
+        )))
         .map_err(BadStoreRequest::ScheduleFailed)
         .and_then(clone!(event_id, scoping, |project| {
             extract_envelope(&request, meta)
                 .into_future()
+                .then(clone!(beginning, |r| log_timer(
+                    StoreTimers::ExtractEnvelope,
+                    beginning,
+                    r
+                )))
                 .and_then(clone!(project, |envelope| {
                     event_id.replace(envelope.event_id());
 
@@ -421,6 +455,11 @@ where
                         .map_err(BadStoreRequest::ScheduleFailed)
                         .and_then(|result| result.map_err(BadStoreRequest::ProjectFailed))
                 }))
+                .then(clone!(beginning, |r| log_timer(
+                    StoreTimers::CheckEnvelope,
+                    beginning,
+                    r
+                )))
                 .and_then(clone!(scoping, |response| {
                     scoping.replace(response.scoping);
 
@@ -438,6 +477,11 @@ where
                         Err(BadStoreRequest::PayloadError(StorePayloadError::Overflow))
                     }
                 }))
+                .then(clone!(beginning, |r| log_timer(
+                    StoreTimers::CheckLimits,
+                    beginning,
+                    r
+                )))
                 .and_then(move |(envelope, rate_limits)| {
                     event_manager
                         .send(QueueEnvelope {
@@ -449,6 +493,11 @@ where
                         .and_then(|result| result.map_err(BadStoreRequest::QueueFailed))
                         .map(move |event_id| (event_id, rate_limits))
                 })
+                .then(clone!(beginning, |r| log_timer(
+                    StoreTimers::QueueEnvelope,
+                    beginning,
+                    r
+                )))
                 .and_then(move |(event_id, rate_limits)| {
                     if rate_limits.is_limited() {
                         Err(BadStoreRequest::RateLimited(rate_limits))
@@ -480,7 +529,12 @@ where
             }
 
             Ok(response)
-        });
+        })
+        .then(clone!(beginning, |r| log_timer(
+            StoreTimers::HandleStoreRequest,
+            beginning,
+            r
+        )));
 
     Box::new(future)
 }
@@ -545,7 +599,7 @@ mod tests {
             minimal,
             MinimalEvent {
                 id: None,
-                ty: EventType::Default
+                ty: EventType::Default,
             }
         );
     }
@@ -558,7 +612,7 @@ mod tests {
             minimal,
             MinimalEvent {
                 id: Some("037af9ac1b49494bacd7ec5114f801d9".parse().unwrap()),
-                ty: EventType::Default
+                ty: EventType::Default,
             }
         );
     }

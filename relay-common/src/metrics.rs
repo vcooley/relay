@@ -70,6 +70,7 @@ use std::sync::Arc;
 use cadence::{Metric, MetricBuilder, StatsdClient};
 use lazy_static::lazy_static;
 use parking_lot::RwLock;
+use std::time::Instant;
 
 /// Client configuration object to store globally.
 #[derive(Debug)]
@@ -488,4 +489,13 @@ macro_rules! metric {
         });
         rv
     }};
+}
+
+/// logs a timer, to be used in then blocks with futures
+pub fn log_timer<T, V>(metric_name: T, start_time: Instant, ret_val: V) -> V
+where
+    T: TimerMetric,
+{
+    metric!(timer(metric_name) = start_time.elapsed());
+    ret_val
 }

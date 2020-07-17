@@ -8,6 +8,7 @@ use failure::Fail;
 use futures::{future, Future};
 use serde::{Deserialize, Serialize};
 
+use relay_common::metrics::TimerMetric;
 use relay_common::{metric, ProjectId};
 use relay_config::{Config, RelayMode};
 use relay_redis::RedisPool;
@@ -21,6 +22,18 @@ use crate::utils::Response;
 
 #[cfg(feature = "processing")]
 use {crate::actors::project_redis::RedisProjectSource, relay_common::clone};
+
+enum ProjectCacheTimers {
+    GetProject,
+}
+
+impl TimerMetric for ProjectCacheTimers {
+    fn name(&self) -> &'static str {
+        match self {
+            ProjectCacheTimers::GetProject => "project_cache.get_project",
+        }
+    }
+}
 
 #[derive(Fail, Debug)]
 pub enum ProjectError {
@@ -126,23 +139,25 @@ impl Handler<GetProject> for ProjectCache {
     type Result = Addr<Project>;
 
     fn handle(&mut self, message: GetProject, context: &mut Context<Self>) -> Self::Result {
-        let config = self.config.clone();
-        metric!(histogram(RelayHistograms::ProjectStateCacheSize) = self.projects.len() as u64);
-        match self.projects.entry(message.id) {
-            Entry::Occupied(entry) => {
-                metric!(counter(RelayCounters::ProjectCacheHit) += 1);
-                entry.get().project.clone()
+        metric!(timer(ProjectCacheTimers::GetProject), {
+            let config = self.config.clone();
+            metric!(histogram(RelayHistograms::ProjectStateCacheSize) = self.projects.len() as u64);
+            match self.projects.entry(message.id) {
+                Entry::Occupied(entry) => {
+                    metric!(counter(RelayCounters::ProjectCacheHit) += 1);
+                    entry.get().project.clone()
+                }
+                Entry::Vacant(entry) => {
+                    metric!(counter(RelayCounters::ProjectCacheMiss) += 1);
+                    let project = Project::new(message.id, config, context.address()).start();
+                    entry.insert(ProjectEntry {
+                        last_updated_at: Instant::now(),
+                        project: project.clone(),
+                    });
+                    project
+                }
             }
-            Entry::Vacant(entry) => {
-                metric!(counter(RelayCounters::ProjectCacheMiss) += 1);
-                let project = Project::new(message.id, config, context.address()).start();
-                entry.insert(ProjectEntry {
-                    last_updated_at: Instant::now(),
-                    project: project.clone(),
-                });
-                project
-            }
-        }
+        })
     }
 }
 

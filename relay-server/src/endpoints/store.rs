@@ -6,6 +6,8 @@ use bytes::{Bytes, BytesMut};
 use futures::Future;
 use serde::Serialize;
 
+use relay_common::metric;
+use relay_common::metrics::{log_timer, TimerMetric};
 use relay_general::protocol::EventId;
 
 use crate::body::StoreBody;
@@ -13,6 +15,7 @@ use crate::endpoints::common::{self, BadStoreRequest};
 use crate::envelope::{ContentType, Envelope, Item, ItemType};
 use crate::extractors::RequestMeta;
 use crate::service::{ServiceApp, ServiceState};
+use std::time::Instant;
 
 // Transparent 1x1 gif
 // See http://probablyprogramming.com/2009/03/15/the-tiniest-gif-ever
@@ -67,10 +70,25 @@ fn parse_event(
     Ok(envelope)
 }
 
+enum ExtractEnvelopeTimers {
+    ExtractEnvelope,
+    ParseEnvelope,
+}
+
+impl TimerMetric for ExtractEnvelopeTimers {
+    fn name(&self) -> &'static str {
+        match self {
+            ExtractEnvelopeTimers::ExtractEnvelope => "store_endpoint.extract_envelope",
+            ExtractEnvelopeTimers::ParseEnvelope => "store_endpoint.parse_envelope",
+        }
+    }
+}
+
 fn extract_envelope(
     request: &HttpRequest<ServiceState>,
     meta: RequestMeta,
 ) -> ResponseFuture<Envelope, BadStoreRequest> {
+    let beginning = Instant::now();
     let max_payload_size = request.state().config().max_event_size();
 
     // If the content type is missing, assume "application/json".
@@ -82,15 +100,18 @@ fn extract_envelope(
     let future = StoreBody::new(&request, max_payload_size)
         .map_err(BadStoreRequest::PayloadError)
         .and_then(move |data| {
-            if data.is_empty() {
-                return Err(BadStoreRequest::EmptyBody);
-            }
+            metric!(timer(ExtractEnvelopeTimers::ParseEnvelope), {
+                if data.is_empty() {
+                    return Err(BadStoreRequest::EmptyBody);
+                }
 
-            match content_type {
-                ContentType::Envelope => parse_envelope(meta, data),
-                _ => parse_event(meta, content_type, data),
-            }
-        });
+                match content_type {
+                    ContentType::Envelope => parse_envelope(meta, data),
+                    _ => parse_event(meta, content_type, data),
+                }
+            })
+        })
+        .then(move |r| log_timer(ExtractEnvelopeTimers::ExtractEnvelope, beginning, r));
 
     Box::new(future)
 }
