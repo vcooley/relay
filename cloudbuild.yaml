@@ -64,6 +64,7 @@ steps:
     - '-e'
     - '-c'
     - |
+      bla
       mkdir onpremise && cd onpremise
       # TODO(byk): We may also build this part as a builder image everytime
       #            there's a push to onpremise and use that image for
