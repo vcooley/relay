@@ -11,6 +11,7 @@ mod envelope;
 mod events;
 mod forward;
 mod healthcheck;
+mod metrics;
 mod minidump;
 mod outcomes;
 mod project_configs;
@@ -24,6 +25,7 @@ pub fn configure_app(app: ServiceApp) -> ServiceApp {
     app
         // Internal routes pointing to /api/relay
         .configure(healthcheck::configure_app)
+        .configure(metrics::configure_app)
         .configure(events::configure_app)
         .handler("/api/relay", statics::not_found)
         // Web API routes pointing to /api/0
