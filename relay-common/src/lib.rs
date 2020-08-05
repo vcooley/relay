@@ -12,6 +12,8 @@ mod constants;
 mod glob;
 mod log;
 mod retry;
+//TODO (RaduW 5.08.2020) temp for testing (to be replaced with Floris's recorder)
+mod simple_metrics_recorder;
 mod time;
 mod utils;
 

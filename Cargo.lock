@@ -1763,6 +1763,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "metrics"
+version = "0.13.0-alpha.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b77b6724a6d2983d0382d552bcabd5482bbc77481a68e69327b59f94c37f0c7"
+dependencies = [
+ "metrics-macros",
+ "proc-macro-hack",
+]
+
+[[package]]
+name = "metrics-macros"
+version = "0.1.0-alpha.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41bdda4b844a1e98965709644ac91262c825ec62cbc4e806751cb47d334f9003"
+dependencies = [
+ "proc-macro-hack",
+ "proc-macro2 1.0.18",
+ "quote 1.0.7",
+ "rustversion",
+ "syn 1.0.33",
+]
+
+[[package]]
 name = "mime"
 version = "0.3.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2739,6 +2762,7 @@ dependencies = [
  "lazycell",
  "log",
  "lru",
+ "metrics",
  "parking_lot 0.10.2",
  "regex",
  "schemars",
@@ -2996,6 +3020,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "138e3e0acb6c9fb258b19b67cb8abd63c00679d2851805ea151465464fe9030a"
 dependencies = [
  "semver",
+]
+
+[[package]]
+name = "rustversion"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9bdc5e856e51e685846fb6c13a1f5e5432946c2c90501bdc76a1319f19e29da"
+dependencies = [
+ "proc-macro2 1.0.18",
+ "quote 1.0.7",
+ "syn 1.0.33",
 ]
 
 [[package]]

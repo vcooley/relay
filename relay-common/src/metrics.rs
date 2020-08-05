@@ -71,6 +71,8 @@ use cadence::{Metric, MetricBuilder, StatsdClient};
 use lazy_static::lazy_static;
 use parking_lot::RwLock;
 
+use crate::simple_metrics_recorder::init_simple_recorder;
+
 /// Client configuration object to store globally.
 #[derive(Debug)]
 pub struct MetricsClient {
@@ -139,7 +141,7 @@ pub fn disable() {
 }
 
 /// Tell the metrics system to report to statsd.
-pub fn configure_statsd<A: ToSocketAddrs>(
+pub fn configure_statsd_original<A: ToSocketAddrs>(
     prefix: &str,
     host: A,
     default_tags: BTreeMap<String, String>,
@@ -153,6 +155,16 @@ pub fn configure_statsd<A: ToSocketAddrs>(
         statsd_client,
         default_tags,
     });
+}
+
+/// Configure the metrics system
+pub fn configure_statsd<A: ToSocketAddrs>(
+    _prefix: &str,
+    _host: A,
+    _default_tags: BTreeMap<String, String>,
+) {
+    //TODO RaduW here we should plug in the real recorder
+    init_simple_recorder();
 }
 
 /// Invoke a callback with the current statsd client.
