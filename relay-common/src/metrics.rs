@@ -73,6 +73,7 @@ use metrics::{try_recorder, Identifier, Key, Label, Recorder};
 use parking_lot::RwLock;
 
 use crate::simple_metrics_recorder::init_simple_recorder;
+use std::time::Duration;
 
 /// Client configuration object to store globally.
 #[derive(Debug)]
@@ -431,6 +432,31 @@ pub fn increment_counter(metric_name: &'static str, increment: i64, key_vals: Ve
     }
 }
 
+/// Accesses the global Recorder (if set) and updates the gauge
+pub fn update_gauge(metric_name: &'static str, value: u64, key_vals: Vec<(&str, &str)>) {
+    if let Some(recorder) = try_recorder() {
+        let ident = identifier_for_metric(recorder, metric_name, key_vals);
+        recorder.update_gauge(ident, value as f64);
+    }
+}
+
+/// Accesses the global Recorder (if set) and adds another datapoint to the histogram
+pub fn record_histogram(metric_name: &'static str, value: u64, key_vals: Vec<(&str, &str)>) {
+    if let Some(recorder) = try_recorder() {
+        let ident = identifier_for_metric(recorder, metric_name, key_vals);
+        recorder.record_histogram(ident, value);
+    }
+}
+
+/// Access the global Recorder (if set) and adds a timer datapoint (as a histogram).
+pub fn record_timer(metric_name: &'static str, value: Duration, key_vals: Vec<(&str, &str)>) {
+    if let Some(recorder) = try_recorder() {
+        let ident = identifier_for_metric(recorder, metric_name, key_vals);
+        let value = value.as_millis() as u64;
+        recorder.record_histogram(ident, value);
+    }
+}
+
 fn identifier_for_metric(
     recorder: &dyn Recorder,
     metric_name: &'static str,
@@ -482,59 +508,103 @@ macro_rules! metric {
 
     // gauge set
     (gauge($id:expr) = $value:expr $(, $k:ident = $v:expr)* $(,)?) => {
-        $crate::metrics::with_client(|client| {
-            use $crate::metrics::_pred::*;
-            client.send_metric(
-                client.gauge_with_tags(&$crate::metrics::GaugeMetric::name(&$id), $value)
-                    $(.with_tag(stringify!($k), $v))*
-            )
-        })
+        $crate::metrics::update_gauge(
+            (&$id as &$crate::metrics::GaugeMetric).name(),
+            $value,
+            vec![$((stringify!($k),$v),)*]
+        );
     };
+
+    // gauge set
+    // (gauge($id:expr) = $value:expr $(, $k:ident = $v:expr)* $(,)?) => {
+    //     $crate::metrics::with_client(|client| {
+    //         use $crate::metrics::_pred::*;
+    //         client.send_metric(
+    //             client.gauge_with_tags(&$crate::metrics::GaugeMetric::name(&$id), $value)
+    //                 $(.with_tag(stringify!($k), $v))*
+    //         )
+    //     })
+    // };
 
     // histogram
     (histogram($id:expr) = $value:expr $(, $k:ident = $v:expr)* $(,)?) => {
-        $crate::metrics::with_client(|client| {
-            use $crate::metrics::_pred::*;
-            client.send_metric(
-                client.histogram_with_tags(&$crate::metrics::HistogramMetric::name(&$id), $value)
-                    $(.with_tag(stringify!($k), $v))*
-            )
-        })
+        $crate::metrics::record_histogram(
+            (&$id as &$crate::metrics::HistogramMetric).name(),
+            $value,
+            vec![$((stringify!($k),$v),)*]
+        );
+    };
+
+    // histogram
+    // (histogram($id:expr) = $value:expr $(, $k:ident = $v:expr)* $(,)?) => {
+    //     $crate::metrics::with_client(|client| {
+    //         use $crate::metrics::_pred::*;
+    //         client.send_metric(
+    //             client.histogram_with_tags(&$crate::metrics::HistogramMetric::name(&$id), $value)
+    //                 $(.with_tag(stringify!($k), $v))*
+    //         )
+    //     })
+    // };
+
+    (set($id:expr) = $value:expr $(, $k:ident = $v:expr)* $(,)?) => {
+        // no op ... sets are not supported in metrics.rs
+        $id; // disable warnings about unused metrics
     };
 
     // sets (count unique occurrences of a value per time interval)
-    (set($id:expr) = $value:expr $(, $k:ident = $v:expr)* $(,)?) => {
-        $crate::metrics::with_client(|client| {
-            use $crate::metrics::_pred::*;
-            client.send_metric(
-                client.set_with_tags(&$crate::metrics::SetMetric::name(&$id), $value)
-                    $(.with_tag(stringify!($k), $v))*
-            )
-        })
-    };
+    // (set($id:expr) = $value:expr $(, $k:ident = $v:expr)* $(,)?) => {
+    //     $crate::metrics::with_client(|client| {
+    //         use $crate::metrics::_pred::*;
+    //         client.send_metric(
+    //             client.set_with_tags(&$crate::metrics::SetMetric::name(&$id), $value)
+    //                 $(.with_tag(stringify!($k), $v))*
+    //         )
+    //     })
+    // };
 
     // timer value (duration)
     (timer($id:expr) = $value:expr $(, $k:ident = $v:expr)* $(,)?) => {
-        $crate::metrics::with_client(|client| {
-            use $crate::metrics::_pred::*;
-            client.send_metric(
-                client.time_duration_with_tags(&$crate::metrics::TimerMetric::name(&$id), $value)
-                    $(.with_tag(stringify!($k), $v))*
-            )
-        })
+        $crate::metrics::record_timer(
+            (&$id as &$crate::metrics::TimerMetric).name(),
+            $value,
+            vec![$((stringify!($k),$v),)*]
+        );
     };
+
+    // timer value (duration)
+    // (timer($id:expr) = $value:expr $(, $k:ident = $v:expr)* $(,)?) => {
+    //     $crate::metrics::with_client(|client| {
+    //         use $crate::metrics::_pred::*;
+    //         client.send_metric(
+    //             client.time_duration_with_tags(&$crate::metrics::TimerMetric::name(&$id), $value)
+    //                 $(.with_tag(stringify!($k), $v))*
+    //         )
+    //     })
+    // };
 
     // timed block
     (timer($id:expr), $($k:ident = $v:expr,)* $block:block) => {{
         let now = std::time::Instant::now();
         let rv = {$block};
-        $crate::metrics::with_client(|client| {
-            use $crate::metrics::_pred::*;
-            client.send_metric(
-                client.time_duration_with_tags(&$crate::metrics::TimerMetric::name(&$id), now.elapsed())
-                    $(.with_tag(stringify!($k), $v))*
-            )
-        });
+        $crate::metrics::record_timer(
+            (&$id as &$crate::metrics::TimerMetric).name(),
+            now.elapsed(),
+            vec![$((stringify!($k),$v),)*]
+        );
         rv
     }};
+
+    // timed block
+    // (timer($id:expr), $($k:ident = $v:expr,)* $block:block) => {{
+    //     let now = std::time::Instant::now();
+    //     let rv = {$block};
+    //     $crate::metrics::with_client(|client| {
+    //         use $crate::metrics::_pred::*;
+    //         client.send_metric(
+    //             client.time_duration_with_tags(&$crate::metrics::TimerMetric::name(&$id), now.elapsed())
+    //                 $(.with_tag(stringify!($k), $v))*
+    //         )
+    //     });
+    //     rv
+    // }};
 }
