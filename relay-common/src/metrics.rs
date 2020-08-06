@@ -69,6 +69,7 @@ use std::sync::Arc;
 
 use cadence::{Metric, MetricBuilder, StatsdClient};
 use lazy_static::lazy_static;
+use metrics::{try_recorder, Identifier, Key, Label, Recorder};
 use parking_lot::RwLock;
 
 use crate::simple_metrics_recorder::init_simple_recorder;
@@ -418,30 +419,66 @@ pub trait GaugeMetric {
     fn name(&self) -> &'static str;
 }
 
+/// Accesses the global Recorder (if set) and increments a counter.
+/// It only supports positive counters, negative values are silently ignored
+pub fn increment_counter(metric_name: &'static str, increment: i64, key_vals: Vec<(&str, &str)>) {
+    if increment > 0 {
+        let increment = increment as u64;
+        if let Some(recorder) = try_recorder() {
+            let ident = identifier_for_metric(recorder, metric_name, key_vals);
+            recorder.increment_counter(ident, increment);
+        }
+    }
+}
+
+fn identifier_for_metric(
+    recorder: &dyn Recorder,
+    metric_name: &'static str,
+    key_vals: Vec<(&str, &str)>,
+) -> Identifier {
+    let key = if key_vals.is_empty() {
+        Key::from_name(metric_name)
+    } else {
+        let labels: Vec<Label> = key_vals
+            .iter()
+            .map(|(k, v)| Label::new(k.to_string(), v.to_string()))
+            .collect();
+        Key::from_name_and_labels(metric_name, labels)
+    };
+    recorder.register_counter(key, None)
+}
+
 /// Emits a metric.
 #[macro_export]
 macro_rules! metric {
     // counter increment
     (counter($id:expr) += $value:expr $(, $k:ident = $v:expr)* $(,)?) => {
-        $crate::metrics::with_client(|client| {
-            use $crate::metrics::_pred::*;
-            client.send_metric(
-                client.count_with_tags(&$crate::metrics::CounterMetric::name(&$id), $value)
-                $(.with_tag(stringify!($k), $v))*
-            )
-        })
+        $crate::metrics::increment_counter(
+            (&$id as &$crate::metrics::CounterMetric).name(),
+            $value,
+            vec![$((stringify!($k),$v),)*]
+        );
     };
+    // (counter($id:expr) += $value:expr $(, $k:ident = $v:expr)* $(,)?) => {
+    //     $crate::metrics::with_client(|client| {
+    //         use $crate::metrics::_pred::*;
+    //         client.send_metric(
+    //             client.count_with_tags(&$crate::metrics::CounterMetric::name(&$id), $value)
+    //             $(.with_tag(stringify!($k), $v))*
+    //         )
+    //     })
+    // };
 
     // counter decrement
-    (counter($id:expr) -= $value:expr $(, $k:ident = $v:expr)* $(,)?) => {
-        $crate::metrics::with_client(|client| {
-            use $crate::metrics::_pred::*;
-            client.send_metric(
-                client.count_with_tags(&$crate::metrics::CounterMetric::name(&$id), -$value)
-                    $(.with_tag(stringify!($k), $v))*
-            )
-        })
-    };
+    // (counter($id:expr) -= $value:expr $(, $k:ident = $v:expr)* $(,)?) => {
+    //     $crate::metrics::with_client(|client| {
+    //         use $crate::metrics::_pred::*;
+    //         client.send_metric(
+    //             client.count_with_tags(&$crate::metrics::CounterMetric::name(&$id), -$value)
+    //                 $(.with_tag(stringify!($k), $v))*
+    //         )
+    //     })
+    // };
 
     // gauge set
     (gauge($id:expr) = $value:expr $(, $k:ident = $v:expr)* $(,)?) => {
