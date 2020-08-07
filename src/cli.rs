@@ -408,7 +408,7 @@ pub fn event_json_schema<'a>(_matches: &ArgMatches<'a>) -> Result<(), Error> {
 pub fn run<'a>(config: Config, _matches: &ArgMatches<'a>) -> Result<(), Error> {
     setup::dump_spawn_infos(&config);
     setup::check_config(&config)?;
-    setup::init_metrics(&config)?;
+    //setup::init_metrics(&config)?;
     relay_server::run(config)?;
     Ok(())
 }

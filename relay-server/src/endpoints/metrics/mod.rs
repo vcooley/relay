@@ -1,35 +1,34 @@
 //! A simple metrics endpoint for relay.
 
 use actix_web::{HttpRequest, HttpResponse};
+use metrics_exporter_statsd::HtmlExporter;
 use serde_json::json;
 
 use crate::extractors::CurrentServiceState;
-use crate::service::{ServiceState, ServiceApp};
+use crate::service::{ServiceApp, ServiceState};
 
-static INDEX: &str = include_str!("index.html");
-static JS: &str = include_str!("graph.js");
-
-fn metrics_data(_state: CurrentServiceState) -> HttpResponse {
-    HttpResponse::Ok().json(json!({
-        "metrics": {
-            "requests": 1234,
-            "event.accepted": 123,
-            "event.rejected": 124,
-            "project_cache.hit": 90,
-            "project_cache.miss": 10,
-        }
-    }))
+fn metrics_data(state: CurrentServiceState) -> HttpResponse {
+    if let Some(ref mc) = *state.metrics_collector().lock() {
+        let html = mc.html();
+        HttpResponse::Ok().json(html.json_snapshot())
+    } else {
+        HttpResponse::Ok().json(json!({}))
+    }
 }
 
 // TODO: serving hardcoded snippets might not be the best idea.
 // rather serve files from disk?
 
 fn js(_: &HttpRequest<ServiceState>) -> HttpResponse {
-    HttpResponse::Ok().content_type("application/javascript").body(JS)
+    HttpResponse::Ok()
+        .content_type("application/javascript")
+        .body(HtmlExporter::JS)
 }
 
 fn index(_: &HttpRequest<ServiceState>) -> HttpResponse {
-    HttpResponse::Ok().content_type("text/html").body(INDEX)
+    HttpResponse::Ok()
+        .content_type("text/html")
+        .body(HtmlExporter::INDEX)
 }
 
 pub fn configure_app(app: ServiceApp) -> ServiceApp {

@@ -61,6 +61,8 @@ symbolic = { version = "7.4.0", optional = true, default-features=false, feature
 tokio-timer = "0.2.13"
 url = { version = "2.1.1", features = ["serde"] }
 uuid = { version = "0.8.1", features = ["v5"] }
+metrics-exporter-statsd = { git="https://github.com/getsentry/hackweek-metrics-exporter-statsd.git", branch="master"}
+# metrics-exporter-statsd = { path="../../hackweek-metrics-exporter-statsd"}
 
 [target."cfg(not(windows))".dependencies]
 libc = "0.2.71"

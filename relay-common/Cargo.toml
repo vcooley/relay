@@ -25,6 +25,8 @@ sentry-types = "0.14.1"
 schemars = { version = "0.8.0-alpha-4", git = "https://github.com/untitaker/schemars", branch = "preserve-formatting", features = ["uuid", "chrono"], optional = true }
 serde = { version = "1.0.114", features = ["derive"] }
 metrics ="0.13.0-alpha.3"
+metrics-exporter-statsd = { git="https://github.com/getsentry/hackweek-metrics-exporter-statsd.git", branch="master"}
+# metrics-exporter-statsd = { path="../../hackweek-metrics-exporter-statsd"}
 
 [features]
 jsonschema = ["schemars"]

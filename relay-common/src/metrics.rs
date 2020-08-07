@@ -67,12 +67,11 @@ use std::net::ToSocketAddrs;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
+use crate::simple_metrics_recorder::init_simple_recorder;
 use cadence::{Metric, MetricBuilder, StatsdClient};
 use lazy_static::lazy_static;
 use metrics::{try_recorder, Identifier, Key, Label, Recorder};
 use parking_lot::RwLock;
-
-use crate::simple_metrics_recorder::init_simple_recorder;
 use std::time::Duration;
 
 /// Client configuration object to store globally.
@@ -426,7 +425,8 @@ pub fn increment_counter(metric_name: &'static str, increment: i64, key_vals: Ve
     if increment > 0 {
         let increment = increment as u64;
         if let Some(recorder) = try_recorder() {
-            let ident = identifier_for_metric(recorder, metric_name, key_vals);
+            let key = identifier_for_metric(recorder, metric_name, key_vals);
+            let ident = recorder.register_counter(key, None);
             recorder.increment_counter(ident, increment);
         }
     }
@@ -435,7 +435,8 @@ pub fn increment_counter(metric_name: &'static str, increment: i64, key_vals: Ve
 /// Accesses the global Recorder (if set) and updates the gauge
 pub fn update_gauge(metric_name: &'static str, value: u64, key_vals: Vec<(&str, &str)>) {
     if let Some(recorder) = try_recorder() {
-        let ident = identifier_for_metric(recorder, metric_name, key_vals);
+        let key = identifier_for_metric(recorder, metric_name, key_vals);
+        let ident = recorder.register_gauge(key, None);
         recorder.update_gauge(ident, value as f64);
     }
 }
@@ -443,7 +444,8 @@ pub fn update_gauge(metric_name: &'static str, value: u64, key_vals: Vec<(&str, 
 /// Accesses the global Recorder (if set) and adds another datapoint to the histogram
 pub fn record_histogram(metric_name: &'static str, value: u64, key_vals: Vec<(&str, &str)>) {
     if let Some(recorder) = try_recorder() {
-        let ident = identifier_for_metric(recorder, metric_name, key_vals);
+        let key = identifier_for_metric(recorder, metric_name, key_vals);
+        let ident = recorder.register_histogram(key, None);
         recorder.record_histogram(ident, value);
     }
 }
@@ -451,7 +453,8 @@ pub fn record_histogram(metric_name: &'static str, value: u64, key_vals: Vec<(&s
 /// Access the global Recorder (if set) and adds a timer datapoint (as a histogram).
 pub fn record_timer(metric_name: &'static str, value: Duration, key_vals: Vec<(&str, &str)>) {
     if let Some(recorder) = try_recorder() {
-        let ident = identifier_for_metric(recorder, metric_name, key_vals);
+        let key = identifier_for_metric(recorder, metric_name, key_vals);
+        let ident = recorder.register_histogram(key, None);
         let value = value.as_millis() as u64;
         recorder.record_histogram(ident, value);
     }
@@ -461,7 +464,7 @@ fn identifier_for_metric(
     recorder: &dyn Recorder,
     metric_name: &'static str,
     key_vals: Vec<(&str, &str)>,
-) -> Identifier {
+) -> Key {
     let key = if key_vals.is_empty() {
         Key::from_name(metric_name)
     } else {
@@ -471,7 +474,7 @@ fn identifier_for_metric(
             .collect();
         Key::from_name_and_labels(metric_name, labels)
     };
-    recorder.register_counter(key, None)
+    return key;
 }
 
 /// Emits a metric.

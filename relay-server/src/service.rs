@@ -1,4 +1,5 @@
 use std::fmt;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use actix::prelude::*;
@@ -6,11 +7,12 @@ use actix_web::{server, App};
 use failure::ResultExt;
 use failure::{Backtrace, Context, Fail};
 use listenfd::ListenFd;
-use sentry_actix::SentryMiddleware;
+use metrics_exporter_statsd::{MetricsBuilder, MetricsCollector};
 
 use relay_common::clone;
 use relay_config::Config;
 use relay_redis::RedisPool;
+use sentry_actix::SentryMiddleware;
 
 use crate::actors::connector::MeteredConnector;
 use crate::actors::controller::{Configure, Controller};
@@ -23,6 +25,7 @@ use crate::actors::relays::RelayCache;
 use crate::actors::upstream::UpstreamRelay;
 use crate::endpoints;
 use crate::middlewares::{AddCommonHeaders, ErrorHandlers, Metrics, ReadRequestMiddleware};
+use parking_lot::Mutex;
 
 /// Common error type for the relay server.
 #[derive(Debug)]
@@ -114,6 +117,7 @@ pub struct ServiceState {
     key_lookup: Addr<ProjectKeyLookup>,
     outcome_producer: Addr<OutcomeProducer>,
     healthcheck: Addr<Healthcheck>,
+    metrics_collector: Arc<Mutex<Option<MetricsCollector>>>,
 }
 
 impl ServiceState {
@@ -143,6 +147,27 @@ impl ServiceState {
         let project_cache =
             ProjectCache::new(config.clone(), upstream_relay.clone(), redis_pool).start();
 
+        let socket_addrs = config.statsd_addrs();
+        let metrics_collector: Option<MetricsCollector> = if let Ok(socket_addrs) = socket_addrs {
+            if !socket_addrs.is_empty() {
+                log::debug!("Starting metrics export on: {}", socket_addrs[0]);
+                MetricsBuilder::new()
+                    .statsd(true)
+                    .statsd_addr(socket_addrs[0])
+                    .local_addr(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+                    .install()
+                    .ok()
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        if metrics_collector.is_none() {
+            log::debug!("Could not create a metrics controller!");
+        }
+
         Ok(ServiceState {
             config: config.clone(),
             key_lookup: ProjectKeyLookup::new(config.clone(), upstream_relay.clone()).start(),
@@ -152,6 +177,7 @@ impl ServiceState {
             healthcheck: Healthcheck::new(config, upstream_relay).start(),
             event_manager,
             outcome_producer,
+            metrics_collector: Arc::new(Mutex::new(metrics_collector)),
         })
     }
 
@@ -187,6 +213,11 @@ impl ServiceState {
     /// Returns the actor for healthchecks.
     pub fn healthcheck(&self) -> Addr<Healthcheck> {
         self.healthcheck.clone()
+    }
+
+    /// Returns the metrics collector
+    pub fn metrics_collector(&self) -> Arc<Mutex<Option<MetricsCollector>>> {
+        self.metrics_collector.clone()
     }
 }
 
