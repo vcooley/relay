@@ -350,6 +350,8 @@ fn check_envelope_size_limits(config: &Config, envelope: &Envelope) -> bool {
                 attachments_size += item.len()
             }
             ItemType::Session => session_count += 1,
+            // TODO: extract the actual session counts from the batch
+            ItemType::SessionBatch => session_count += 1,
             ItemType::UserReport => (),
         }
     }

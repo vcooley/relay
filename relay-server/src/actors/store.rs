@@ -15,7 +15,7 @@ use serde::{ser::Error, Serialize};
 
 use relay_common::{metric, ProjectId, UnixTimestamp, Uuid};
 use relay_config::{Config, KafkaTopic};
-use relay_general::protocol::{self, EventId, SessionStatus, SessionUpdate};
+use relay_general::protocol::{self, EventId, SessionBatch, SessionStatus, SessionUpdate};
 use relay_quotas::Scoping;
 
 use crate::envelope::{AttachmentType, Envelope, Item, ItemType};
@@ -145,6 +145,23 @@ impl StoreForwarder {
         self.produce(KafkaTopic::Attachments, message)
     }
 
+    fn produce_session_from_batch(
+        &self,
+        org_id: u64,
+        project_id: ProjectId,
+        event_retention: u16,
+        item: &Item,
+    ) -> Result<(), StoreError> {
+        let batch = match SessionBatch::parse(&item.payload()) {
+            Ok(batch) => batch,
+            Err(_) => return Ok(()),
+        };
+        for session in batch.into_updates_iter() {
+            self.produce_session_update(org_id, project_id, event_retention, session)?;
+        }
+        Ok(())
+    }
+
     fn produce_session(
         &self,
         org_id: u64,
@@ -156,7 +173,16 @@ impl StoreForwarder {
             Ok(session) => session,
             Err(_) => return Ok(()),
         };
+        self.produce_session_update(org_id, project_id, event_retention, session)
+    }
 
+    fn produce_session_update(
+        &self,
+        org_id: u64,
+        project_id: ProjectId,
+        event_retention: u16,
+        session: SessionUpdate,
+    ) -> Result<(), StoreError> {
         let message = KafkaMessage::Session(SessionKafkaMessage {
             org_id,
             project_id,
@@ -440,6 +466,14 @@ impl Handler<StoreEnvelope> for StoreForwarder {
                 }
                 ItemType::Session => {
                     self.produce_session(
+                        scoping.organization_id,
+                        scoping.project_id,
+                        retention,
+                        item,
+                    )?;
+                }
+                ItemType::SessionBatch => {
+                    self.produce_session_from_batch(
                         scoping.organization_id,
                         scoping.project_id,
                         retention,
