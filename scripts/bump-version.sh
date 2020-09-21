@@ -1,11 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-if [ "$(uname -s)" != "Linux" ]; then
-    echo "Relay can only be released on Linux!"
-    echo "Please use the GitHub Action instead."
-    exit 1
-fi
+# if [ "$(uname -s)" != "Linux" ]; then
+#     echo "Relay can only be released on Linux!"
+#     echo "Please use the GitHub Action instead."
+#     exit 1
+# fi
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd $SCRIPT_DIR/..
@@ -21,6 +21,6 @@ perl -pi -e "s/^version = .*\$/version = \"$NEW_VERSION\"/" $TOML_FILES
 
 cargo update -p relay
 
-CHANGE_DATE="$(date +'%Y-%m-%d' -d '3 years')"
-echo "Bumping Change Date to $CHANGE_DATE"
-sed -i -e "s/\(Change Date:\s*\)[-0-9]\+\$/\\1$CHANGE_DATE/" LICENSE
+# CHANGE_DATE="$(date +'%Y-%m-%d' -d '3 years')"
+# echo "Bumping Change Date to $CHANGE_DATE"
+# sed -i -e "s/\(Change Date:\s*\)[-0-9]\+\$/\\1$CHANGE_DATE/" LICENSE
