@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 99.0.0
 
 - Require macOS 10.15.0 or newer for the macOS wheel after moving to GitHub Actions. ([#780](https://github.com/getsentry/relay/pull/780))
 
